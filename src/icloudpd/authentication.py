@@ -95,15 +95,18 @@ def authenticator(
     if not icloud:
         raise NotImplementedError("None of providers gave password")
 
-    if valid_password:
-        # save valid password to all providers
-        for _, _pair in password_providers.items():
-            _, writer = _pair
-            writer(username, valid_password[0])
-
     if icloud.requires_2fa:
         logger.info("Two-factor authentication is required (2fa)")
+        # Send notification before transitioning password status to NO_INPUT_NEEDED,
+        # so the mail is sent while the webui is still in CHECKING_PASSWORD state
+        # (i.e. before "stop waiting for password" — fixes ordering bug where mail
+        # was sent after the password wait had already ended).
         notificator()
+        if valid_password:
+            # save valid password to all providers
+            for _, _pair in password_providers.items():
+                _, writer = _pair
+                writer(username, valid_password[0])
         if mfa_provider == MFAProvider.WEBUI:
             request_2fa_web(icloud, logger, status_exchange)
         else:
@@ -112,7 +115,19 @@ def authenticator(
     elif icloud.requires_2sa:
         logger.info("Two-step authentication is required (2sa)")
         notificator()
+        if valid_password:
+            # save valid password to all providers
+            for _, _pair in password_providers.items():
+                _, writer = _pair
+                writer(username, valid_password[0])
         request_2sa(icloud, logger)
+
+    else:
+        if valid_password:
+            # save valid password to all providers
+            for _, _pair in password_providers.items():
+                _, writer = _pair
+                writer(username, valid_password[0])
 
     return icloud
 
