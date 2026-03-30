@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Build a test Docker image for the current branch and push to GitHub Container Registry (GHCR).
+#
+# Usage:
+#   scripts/build_docker_test [GITHUB_USERNAME]
+#
+# Prerequisites:
+#   - Docker with buildx support
+#   - A GitHub Personal Access Token (PAT) with `write:packages` and `read:packages` scopes
+#     Set it as GITHUB_TOKEN env var, or the script will prompt for it.
+#
+# The image will be pushed to:
+#   ghcr.io/<GITHUB_USERNAME>/icloud_photos_downloader:<branch-tag>
+
+# ── Configuration ────────────────────────────────────────────────────────────
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+VERSION=$(scripts/get_version)
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+# Convert branch name to a valid Docker tag (replace / with -)
+BRANCH_TAG="${BRANCH//\//-}"
+ARCH="amd64"
+PLATFORM="linux/amd64"
+
+# ── GitHub username ───────────────────────────────────────────────────────────
+
+GITHUB_USERNAME="${1:-}"
+if [[ -z "$GITHUB_USERNAME" ]]; then
+  read -rp "GitHub username (for ghcr.io): " GITHUB_USERNAME
+fi
+
+REGISTRY="ghcr.io"
+IMAGE="${REGISTRY}/${GITHUB_USERNAME}/icloud_photos_downloader"
+FULL_TAG="${IMAGE}:${BRANCH_TAG}"
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Branch  : ${BRANCH}"
+echo "  Version : ${VERSION}"
+echo "  Image   : ${FULL_TAG}"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# ── Step 1: Ensure buildx builder exists ─────────────────────────────────────
+
+echo "▶ Ensuring Docker buildx builder is available..."
+if ! docker buildx inspect icloudpd-builder >/dev/null 2>&1; then
+  docker buildx create \
+    --use \
+    --driver=docker-container \
+    --name icloudpd-builder \
+    --bootstrap
+else
+  docker buildx use icloudpd-builder
+fi
+
+# ── Step 2: Build static binaries using Dockerfile.build-musl ────────────────
+
+echo ""
+echo "▶ Building static binaries for ${PLATFORM} (this may take a while)..."
+mkdir -p dist
+# Clear only the musl binaries to keep any other dist artefacts
+rm -f dist/icloud dist/icloudpd dist/icloud-"${VERSION}"-linux-musl-"${ARCH}" dist/icloudpd-"${VERSION}"-linux-musl-"${ARCH}"
+
+docker buildx build \
+  --platform "${PLATFORM}" \
+  --builder icloudpd-builder \
+  --progress plain \
+  --output "type=local,dest=dist" \
+  -f Dockerfile.build-musl \
+  .
+
+# ── Step 3: Rename binaries to match the pattern Dockerfile expects ───────────
+
+echo ""
+echo "▶ Renaming binaries..."
+mv -v dist/icloud   "dist/icloud-${VERSION}-linux-musl-${ARCH}"
+mv -v dist/icloudpd "dist/icloudpd-${VERSION}-linux-musl-${ARCH}"
+
+# ── Step 4: Login to GitHub Container Registry ───────────────────────────────
+
+echo ""
+echo "▶ Logging in to ${REGISTRY}..."
+echo ""
+echo "  You need a GitHub Personal Access Token (PAT) with:"
+echo "    • write:packages"
+echo "    • read:packages"
+echo "  Create one at: https://github.com/settings/tokens/new"
+echo ""
+
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+if [[ -z "$GITHUB_TOKEN" ]]; then
+  read -rsp "GitHub PAT (input hidden): " GITHUB_TOKEN
+  echo ""
+fi
+
+echo "${GITHUB_TOKEN}" | docker login "${REGISTRY}" -u "${GITHUB_USERNAME}" --password-stdin
+
+# ── Step 5: Build final runtime image and push ───────────────────────────────
+
+echo ""
+echo "▶ Building and pushing runtime image: ${FULL_TAG}"
+docker buildx build \
+  --platform "${PLATFORM}" \
+  --builder icloudpd-builder \
+  --progress plain \
+  --tag "${FULL_TAG}" \
+  --push \
+  -f Dockerfile \
+  .
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Done! Image pushed to:"
+echo "  ${FULL_TAG}"
+echo ""
+echo "  Pull and test with:"
+echo "  docker pull ${FULL_TAG}"
+echo "  docker run --rm ${FULL_TAG} icloudpd --version"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
