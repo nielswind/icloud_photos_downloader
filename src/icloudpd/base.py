@@ -129,12 +129,19 @@ def ask_password_in_console(_user: str) -> str | None:
 
 
 def get_password_from_webui(
-    logger: Logger, status_exchange: StatusExchange, _user: str
+    logger: Logger,
+    status_exchange: StatusExchange,
+    notificator: Callable[[], None],
+    _user: str,
 ) -> str | None:
-    """Request two-factor authentication through Webui."""
+    """Request password through Webui. Sends notification before blocking so the user
+    is alerted to visit the web UI before the password form is shown."""
     if not status_exchange.replace_status(Status.NO_INPUT_NEEDED, Status.NEED_PASSWORD):
         logger.error("Expected NO_INPUT_NEEDED, but got something else")
         return None
+
+    # Notify before blocking so the alert reaches the user while the form is waiting.
+    notificator()
 
     # wait for input
     while True:
@@ -326,6 +333,37 @@ def _process_all_users_once(
             # Use shared status exchange instead of creating new ones per user
             status_exchange = shared_status_exchange
 
+            # Build notificator first so it can be wired into the webui password reader.
+            notificator = partial(
+                notificator_builder,
+                logger,
+                user_config.username,
+                user_config.smtp_username,
+                user_config.smtp_password,
+                user_config.smtp_host,
+                user_config.smtp_port,
+                user_config.smtp_no_tls,
+                user_config.notification_email,
+                user_config.notification_email_from,
+                str(user_config.notification_script) if user_config.notification_script else None,
+            )
+
+            # One-shot wrapper: ensures the notification is sent at most once per
+            # authentication attempt regardless of how many code paths call it.
+            # When the webui password reader fires it early (before blocking), the later
+            # call in authenticator() (for the 2FA/2SA case) becomes a no-op.
+            _notified: List[bool] = [False]
+
+            def _make_one_shot(n: Callable[[], None], flag: List[bool]) -> Callable[[], None]:
+                def _one_shot() -> None:
+                    if not flag[0]:
+                        flag[0] = True
+                        n()
+
+                return _one_shot
+
+            one_shot_notificator = _make_one_shot(notificator, _notified)
+
             # Set up password providers with proper function replacements
             password_providers_dict: Dict[
                 PasswordProvider, Tuple[Callable[[str], str | None], Callable[[str, str], None]]
@@ -334,7 +372,7 @@ def _process_all_users_once(
             for provider in global_config.password_providers:
                 if provider == PasswordProvider.WEBUI:
                     password_providers_dict[provider] = (
-                        partial(get_password_from_webui, logger, status_exchange),
+                        partial(get_password_from_webui, logger, status_exchange, one_shot_notificator),
                         partial(update_password_status_in_webui, status_exchange),
                     )
                 elif provider == PasswordProvider.CONSOLE:
@@ -419,20 +457,6 @@ def _process_all_users_once(
                 else (lambda _s, _c, _p: False)
             )
 
-            notificator = partial(
-                notificator_builder,
-                logger,
-                user_config.username,
-                user_config.smtp_username,
-                user_config.smtp_password,
-                user_config.smtp_host,
-                user_config.smtp_port,
-                user_config.smtp_no_tls,
-                user_config.notification_email,
-                user_config.notification_email_from,
-                str(user_config.notification_script) if user_config.notification_script else None,
-            )
-
             # Use core_single_run since we've disabled watch at this level
             logger.info(f"Processing user: {user_config.username}")
             result = core_single_run(
@@ -443,7 +467,7 @@ def _process_all_users_once(
                 password_providers_dict,
                 passer,
                 downloader,
-                notificator,
+                one_shot_notificator,
                 lp_filename_generator,
             )
 
