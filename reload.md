@@ -82,3 +82,31 @@ Add to the Unreleased section.
 
 ## Files Modified
 - `src/icloudpd/base.py` (get_password_from_webui + user loop in run_with_configs)
+
+---
+
+## Also built in this session: `--retrieve-all-first` (commit `30f29d1` on branch `fix/2fa-v2`)
+
+### Feature summary
+New CLI flag for efficient incremental sync after an initial full download.
+
+**How it works:**
+- **First run** (no marker): scans ALL photos ASCENDING, writes `.icloudpd_initial_sync_complete` in the download dir on completion.
+- **Subsequent runs** (marker exists): DESCENDING order + `--until-found N` — scans newest-first, stops after N consecutive already-downloaded files.
+- `--skip-created-before` in incremental mode also early-exits when photos are older than the cutoff.
+- `--until-found` is required in incremental mode — error exit if missing.
+
+**Typical usage:**
+```bash
+icloudpd -d /photos --username you@icloud.com --retrieve-all-first --until-found 50
+icloudpd -d /photos --username you@icloud.com --retrieve-all-first --until-found 50 --skip-created-before 365d
+```
+
+**Files changed:** `config.py`, `cli.py`, `services/photos.py`, `base.py`, `tests/helpers/__init__.py`, `tests/test_retrieve_all_first.py`, `CHANGELOG.md`
+
+### Known limitation
+Edited old photos keep their original `assetDate` and stay in the same sort position — DESCENDING + `until_found` will miss them. True incremental sync for edits would require CloudKit sync tokens (currently requested but unused in the API client).
+
+### What's next for this feature
+- Open PR from `fix/2fa-v2` → `master`
+- Consider skipping marker write when `--dry-run` is active
