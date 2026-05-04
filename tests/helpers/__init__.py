@@ -146,6 +146,7 @@ def clean_boolean_args(params: Sequence[str]) -> list[str]:
         "--use-os-locale",
         "--only-print-filenames",
         "--no-progress-bar",
+        "--retrieve-all-first",
     }
 
     cleaned_args = []

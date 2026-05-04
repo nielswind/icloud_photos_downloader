@@ -81,6 +81,13 @@ def add_options_for_user(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
         default=None,
     )
     cloned.add_argument(
+        "--retrieve-all-first",
+        help="On first run (no marker file in download directory), download all photos. "
+        "On subsequent runs, switch to newest-first incremental mode (requires --until-found).",
+        action="store_true",
+        default=False,
+    )
+    cloned.add_argument(
         "-a",
         "--album",
         help="Album(s) to download, or the whole collection if not specified",
@@ -472,6 +479,7 @@ def map_to_config(user_ns: argparse.Namespace) -> UserConfig:
         skip_created_before=user_ns.skip_created_before,
         skip_created_after=user_ns.skip_created_after,
         skip_photos=user_ns.skip_photos,
+        retrieve_all_first=user_ns.retrieve_all_first,
     )
 
 

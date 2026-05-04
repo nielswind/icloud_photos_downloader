@@ -484,6 +484,7 @@ class PhotoAlbum:
         self.list_type = list_type
         self.obj_type = obj_type
         self.offset = 0
+        self.direction = "ASCENDING"
         self.query_filter = query_filter
         self.page_size = page_size
 
@@ -592,7 +593,7 @@ class PhotoAlbum:
                     },
                     {
                         "fieldName": "direction",
-                        "fieldValue": {"type": "STRING", "value": "ASCENDING"},
+                        "fieldValue": {"type": "STRING", "value": self.direction},
                         "comparator": "EQUALS",
                     },
                 ],

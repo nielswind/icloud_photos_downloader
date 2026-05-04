@@ -234,6 +234,7 @@ class CliTestCase(TestCase):
                         skip_created_before=None,
                         skip_created_after=None,
                         skip_photos=False,
+                        retrieve_all_first=False,
                     ),
                     UserConfig(
                         directory="def",
@@ -274,6 +275,7 @@ class CliTestCase(TestCase):
                         skip_created_before=None,
                         skip_created_after=None,
                         skip_photos=False,
+                        retrieve_all_first=False,
                     ),
                 ],
             ),
@@ -352,6 +354,7 @@ class CliTestCase(TestCase):
                         ),
                         skip_created_after=datetime.timedelta(days=2),
                         skip_photos=False,
+                        retrieve_all_first=False,
                     ),
                 ],
             ),

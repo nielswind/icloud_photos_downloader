@@ -372,7 +372,9 @@ def _process_all_users_once(
             for provider in global_config.password_providers:
                 if provider == PasswordProvider.WEBUI:
                     password_providers_dict[provider] = (
-                        partial(get_password_from_webui, logger, status_exchange, one_shot_notificator),
+                        partial(
+                            get_password_from_webui, logger, status_exchange, one_shot_notificator
+                        ),
                         partial(update_password_status_in_webui, status_exchange),
                     )
                 elif provider == PasswordProvider.CONSOLE:
@@ -985,6 +987,15 @@ def core_single_run(
 
                     directory = os.path.normpath(user_config.directory)
 
+                    marker_path = os.path.join(directory, ".icloudpd_initial_sync_complete")
+                    use_incremental = user_config.retrieve_all_first and os.path.exists(marker_path)
+                    if use_incremental and user_config.until_found is None:
+                        logger.error(
+                            "--retrieve-all-first in incremental mode requires --until-found to be set"
+                        )
+                        return 1
+                    direction = "DESCENDING" if use_incremental else "ASCENDING"
+
                     if user_config.skip_photos or user_config.skip_videos:
                         photo_video_phrase = "photos" if user_config.skip_videos else "videos"
                     else:
@@ -998,11 +1009,13 @@ def core_single_run(
 
                     logger.debug(f"Looking up all {photo_video_phrase}{album_phrase}...")
 
-                    albums: Iterable[PhotoAlbum] = (
+                    albums: list[PhotoAlbum] = (
                         list(map_(library_object.albums.__getitem__, user_config.albums))
                         if len(user_config.albums) > 0
                         else [library_object.all]
                     )
+                    for _album in albums:
+                        _album.direction = direction
                     album_lengths: Callable[[Iterable[PhotoAlbum]], Iterable[int]] = partial_1_1(
                         map_, len
                     )
@@ -1083,6 +1096,12 @@ def core_single_run(
                                 and counter.value() >= user_config.until_found
                             )
 
+                        incremental_cutoff: datetime.datetime | None = (
+                            offset_to_datetime(user_config.skip_created_before)
+                            if use_incremental and user_config.skip_created_before is not None
+                            else None
+                        )
+
                         status_exchange.get_progress().photos_count = (
                             0 if photos_count is None else photos_count
                         )
@@ -1101,6 +1120,17 @@ def core_single_run(
                                         user_config.until_found,
                                     )
                                     break
+
+                                if (
+                                    incremental_cutoff is not None
+                                    and item.created < incremental_cutoff
+                                ):
+                                    logger.info(
+                                        "Reached date cutoff (%s) in incremental mode. Stopping.",
+                                        incremental_cutoff,
+                                    )
+                                    break
+
                                 # item = next(photos_iterator)
                                 should_delete = False
 
@@ -1196,6 +1226,19 @@ def core_single_run(
                             logger.info(message)
                             status_exchange.get_progress().photos_last_message = message
                         status_exchange.get_progress().reset()
+
+                    if (
+                        user_config.retrieve_all_first
+                        and not use_incremental
+                        and not status_exchange.get_progress().cancel
+                    ):
+                        with open(marker_path, "w") as _marker_f:
+                            _marker_f.write(
+                                datetime.datetime.now(datetime.timezone.utc).isoformat()
+                            )
+                        logger.info(
+                            "Initial sync complete. Subsequent runs will use incremental mode."
+                        )
 
                     if user_config.auto_delete:
                         autodelete_photos(

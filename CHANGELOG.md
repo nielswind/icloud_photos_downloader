@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- feat: add `--retrieve-all-first` flag for efficient incremental sync — first run downloads everything; subsequent runs use newest-first (DESCENDING) order with `--until-found` to skip the bulk of an already-synced library
+
 ## 1.32.2 (2025-09-01)
 
 - fix: HTTP response content not captured for authentication and non-streaming requests [#1240](https://github.com/icloud-photos-downloader/icloud_photos_downloader/issues/1240)
