@@ -172,7 +172,10 @@ def request_2fa(icloud: PyiCloudService, logger: logging.Logger) -> None:
     # to initiate code delivery. Failure is non-fatal — the user can still enter
     # a code if it arrives via another path.
     if not icloud.trigger_push_notification():
-        logger.debug("Failed to trigger 2FA push notification, continuing anyway")
+        logger.warning(
+            "Failed to send 2FA push notification to trusted devices. "
+            "Enter a device index to request an SMS code instead."
+        )
     else:
         logger.debug("2FA push notification triggered")
 
@@ -271,6 +274,12 @@ def request_2fa_web(
             f"Expected NO_INPUT_NEEDED, but got {status_exchange.get_status()}"
         )
 
+    if not icloud.trigger_push_notification():
+        logger.warning(
+            "Failed to send 2FA push notification to trusted devices. "
+            "You may not receive a verification code automatically."
+        )
+
     # wait for input
     while True:
         status = status_exchange.get_status()
@@ -304,5 +313,6 @@ def request_2fa_web(
                     "the two-factor authentication expires.\n"
                     "(Use --help to view information about SMTP options.)"
                 )
+                return
         else:
             raise PyiCloudFailedMFAException("Failed to change status")

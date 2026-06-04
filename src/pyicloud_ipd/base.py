@@ -27,6 +27,7 @@ from foundation.string import obfuscate
 from pyicloud_ipd.exceptions import (
     PyiCloudAPIResponseException,
     PyiCloudConnectionException,
+    PyiCloudException,
     PyiCloudFailedLoginException,
     PyiCloudServiceNotActivatedException,
 )
@@ -720,7 +721,8 @@ class PyiCloudService:
                     headers=headers,
                 )
             return True
-        except PyiCloudAPIResponseException:
+        except PyiCloudException as e:
+            LOGGER.debug("Failed to send 2FA push notification: %s", e)
             return False
 
     def send_2fa_code_sms(self, device_id: int) -> bool:

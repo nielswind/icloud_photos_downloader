@@ -3,6 +3,9 @@
 ## Unreleased
 
 - feat: add `--retrieve-all-first` flag for efficient incremental sync — first run downloads everything; subsequent runs use newest-first (DESCENDING) order with `--until-found` to skip the bulk of an already-synced library
+- fix: 2FA push notification not sent when using `--mfa-provider webui`, causing trusted devices to never receive the verification code (and any entered code to fail with -21669)
+- fix: 2FA push notification failure now logged as WARNING instead of DEBUG, so users know to fall back to SMS
+- fix: `request_2fa_web` could raise spuriously after successful validation due to missing `return` in the success path
 
 ## 1.32.2 (2025-09-01)
 
